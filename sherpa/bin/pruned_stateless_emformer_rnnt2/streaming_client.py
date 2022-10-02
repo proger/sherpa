@@ -35,6 +35,7 @@ import logging
 
 import torchaudio
 import websockets
+import lhotse
 
 
 def get_args():
@@ -54,6 +55,13 @@ def get_args():
         type=int,
         default=6006,
         help="Port of the server",
+    )
+
+    parser.add_argument(
+        "-o", "--out-cuts",
+        type=str,
+        required=True,
+        help="Filename to write lhotse.CutSet"
     )
 
     parser.add_argument(
@@ -80,16 +88,17 @@ async def receive_results(socket: websockets.WebSocketServerProtocol):
         text = result["text"]
 
         if is_final:
-            ans.append(dict(segment=segment, text=text))
-            logging.info(f"Final result of segment {segment}: {text}")
+            ans.append(result)
+            print(message)
             continue
 
-        last_10_words = text.split()[-10:]
-        last_10_words = " ".join(last_10_words)
-        logging.info(
-            f"Partial result of segment {segment} (last 10 words): "
-            f"{last_10_words}"
-        )
+        if False:
+            last_10_words = text.split()[-10:]
+            last_10_words = " ".join(last_10_words)
+            logging.info(
+                f"Partial result of segment {segment} (last 10 words): "
+                f"{last_10_words}"
+            )
 
     return ans
 
@@ -106,24 +115,31 @@ async def run(server_addr: str, server_port: int, test_wav: str):
         receive_task = asyncio.create_task(receive_results(websocket))
 
         frame_size = 4096
-        sleep_time = frame_size / sample_rate  # in seconds
         start = 0
         while start < wave.numel():
             end = start + min(frame_size, wave.numel() - start)
             d = wave.numpy().data[start:end]
 
             await websocket.send(d)
-            await asyncio.sleep(sleep_time)  # in seconds
 
             start += frame_size
 
         await websocket.send(b"Done")
         decoding_results = await receive_task
-        s = ""
-        for r in decoding_results:
-            s += f"segment: {r['segment']}\n"
-            s += f"text: {r['text']}\n"
-        logging.info(f"{test_wav}\n{s}")
+
+        recording = lhotse.Recording.from_file(test_wav)
+        cut = recording.to_cut()
+        cut.supervisions = [
+            lhotse.SupervisionSegment(
+                id=f"{recording.id}-{segment['segment']:06d}",
+                recording_id=recording.id,
+                start=round(segment["start"], ndigits=8),
+                duration=round(segment["end"]-segment["start"], ndigits=8),
+                text=segment["text"].strip()
+            )
+            for segment in decoding_results
+        ]
+        return cut
 
 
 async def main():
@@ -134,21 +150,23 @@ async def main():
     server_port = args.server_port
 
     max_retry_count = 5
-    for sound_file in args.sound_files:
-        count = 0
-        while count < max_retry_count:
-            count += 1
-            try:
-                await run(server_addr, server_port, sound_file)
-                break
-            except websockets.exceptions.InvalidStatusCode as e:
-                print(e.status_code)
-                print(http.client.responses[e.status_code])
-                print(e.headers)
+    with lhotse.CutSet.open_writer(args.out_cuts) as writer:
+        for sound_file in args.sound_files:
+            count = 0
+            while count < max_retry_count:
+                count += 1
+                try:
+                    cut = await run(server_addr, server_port, sound_file)
+                    writer.write(cut, flush=True)
+                    break
+                except websockets.exceptions.InvalidStatusCode as e:
+                    print(e.status_code)
+                    print(http.client.responses[e.status_code])
+                    print(e.headers)
 
-                if e.status_code != http.HTTPStatus.SERVICE_UNAVAILABLE:
-                    raise
-                await asyncio.sleep(2)
+                    if e.status_code != http.HTTPStatus.SERVICE_UNAVAILABLE:
+                        raise
+                    await asyncio.sleep(2)
 
 
 if __name__ == "__main__":

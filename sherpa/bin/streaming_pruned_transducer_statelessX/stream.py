@@ -15,7 +15,7 @@
 # limitations under the License.
 
 import math
-from typing import List
+from typing import List, Tuple
 
 import torch
 from kaldifeat import FbankOptions, OnlineFbank, OnlineFeature
@@ -140,7 +140,7 @@ class Stream(object):
     def endpoint_detected(
         self,
         config: sherpa.OnlineEndpointConfig,
-    ) -> bool:
+    ) -> Tuple[bool, int]:
         """
         Args:
           config:
@@ -170,4 +170,4 @@ class Stream(object):
             self.num_trailing_blank_frames = 0
             self.segment += 1
 
-        return detected
+        return detected, num_frames_decoded

@@ -35,7 +35,7 @@ class GreedySearchOffline:
         self,
         model: "RnntConformerModel",
         features: List[torch.Tensor],
-        use_fp16: bool,
+        use_fp16: bool = True,
     ) -> List[List[int]]:
         """
         Args:

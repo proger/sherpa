@@ -495,6 +495,9 @@ class StreamingServer(object):
 
         self.beam_search.init_stream(stream)
 
+        start = 0.0
+        end = 0.0
+
         while True:
             samples = await self.recv_audio_samples(socket)
             if samples is None:
@@ -509,17 +512,23 @@ class StreamingServer(object):
                 hyp = self.beam_search.get_texts(stream)
 
                 segment = stream.segment
-                is_final = stream.endpoint_detected(self.online_endpoint_config)
+                is_final, num_frames_decoded = stream.endpoint_detected(self.online_endpoint_config)
+
+                frame_shift_ms = stream.feature_extractor.opts.frame_opts.frame_shift_ms
                 if is_final:
                     self.beam_search.init_stream(stream)
+                    start = end
+                    end = round(start + float((num_frames_decoded * frame_shift_ms)/1000), 2)
 
                 message = {
                     "segment": segment,
                     "text": hyp,
+                    "start": start,
+                    "end": end,
                     "final": is_final,
                 }
 
-                await socket.send(json.dumps(message))
+                await socket.send(json.dumps(message, ensure_ascii=False))
 
         stream.input_finished()
         while len(stream.features) > self.chunk_length:
@@ -533,9 +542,15 @@ class StreamingServer(object):
 
         hyp = self.beam_search.get_texts(stream)
 
+        start = end
+        num_frames_decoded = stream.processed_frames * stream.subsampling_factor
+        end = round(start + float((num_frames_decoded * frame_shift_ms)/1000), 2)
+
         message = {
             "segment": stream.segment,
             "text": hyp,
+            "start": start,
+            "end": end,
             "final": True,  # end of connection, always set final to True
         }
 
