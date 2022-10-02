@@ -34,18 +34,18 @@ class OnlineEndpointConfig:
         min_utterance_length=0.0,
     )
 
-    # rule2 times out after 2.0 seconds of silence after decoding something,
+    # rule2 times out after 0.5 seconds of silence after decoding 10 seconds,
     rule2: OnlineEndpointRule = OnlineEndpointRule(
         must_contain_nonsilence=True,
-        min_trailing_silence=2.0,
-        min_utterance_length=0.0,
+        min_trailing_silence=0.5,
+        min_utterance_length=10.0,
     )
-    # rule3 times out after the utterance is 20 seconds long, regardless of
+    # rule3 times out after the utterance is 45 seconds long, regardless of
     # anything else.
     rule3: OnlineEndpointRule = OnlineEndpointRule(
         must_contain_nonsilence=False,
         min_trailing_silence=0.0,
-        min_utterance_length=20.0,
+        min_utterance_length=45.0,
     )
 
     @staticmethod
